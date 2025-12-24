@@ -44,30 +44,66 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      // Clone repository using git command (works in serverless with git installed)
-      // For Vercel, we'll need to ensure git is available or use zip download
+      // Try git clone first (will fail on Vercel, but that's okay)
       try {
         await execAsync(`git clone --depth 1 ${repoUrl} ${tempDir}`, {
-          timeout: 60000, // 60 second timeout
-          maxBuffer: 10 * 1024 * 1024 // 10MB buffer
+          timeout: 60000,
+          maxBuffer: 10 * 1024 * 1024
         })
       } catch (gitError: any) {
-        // Fallback: Download as zip and extract
-        let zipUrl = `https://github.com/${owner}/${repo}/archive/refs/heads/main.zip`
-        let response = await fetch(zipUrl)
+        // Fallback: Get default branch from GitHub API, then download zip
+        let defaultBranch = 'main'
         
-        if (!response.ok) {
-          // Try master branch
-          zipUrl = `https://github.com/${owner}/${repo}/archive/refs/heads/master.zip`
-          response = await fetch(zipUrl)
-          if (!response.ok) {
-            throw new Error(`Failed to download repository: ${response.statusText}`)
+        try {
+          // Get repository info to find default branch
+          const repoInfoResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+            headers: {
+              'Accept': 'application/vnd.github.v3+json',
+              ...(process.env.GITHUB_TOKEN && { 'Authorization': `token ${process.env.GITHUB_TOKEN}` })
+            }
+          })
+          
+          if (repoInfoResponse.ok) {
+            const repoInfo = await repoInfoResponse.json()
+            defaultBranch = repoInfo.default_branch || 'main'
           }
+        } catch (apiError) {
+          console.warn('Could not fetch default branch, using "main" as fallback')
         }
 
-        const arrayBuffer = await response.arrayBuffer()
-        const zip = new AdmZip(Buffer.from(arrayBuffer))
-        zip.extractAllTo(tempDir, true)
+        // Try downloading zip with correct format (simpler URL)
+        const branchesToTry = [defaultBranch, 'main', 'master']
+        let downloaded = false
+        
+        for (const branch of branchesToTry) {
+          try {
+            // Use simpler URL format: /archive/{branch}.zip (not /refs/heads/)
+            const zipUrl = `https://github.com/${owner}/${repo}/archive/${branch}.zip`
+            
+            const response = await fetch(zipUrl, {
+              redirect: 'follow', // Explicitly follow redirects
+              headers: {
+                'Accept': 'application/zip',
+                ...(process.env.GITHUB_TOKEN && { 'Authorization': `token ${process.env.GITHUB_TOKEN}` })
+              }
+            })
+            
+            if (response.ok && response.headers.get('content-type')?.includes('zip')) {
+              const arrayBuffer = await response.arrayBuffer()
+              const zip = new AdmZip(Buffer.from(arrayBuffer))
+              zip.extractAllTo(tempDir, true)
+              downloaded = true
+              break
+            }
+          } catch (branchError) {
+            console.warn(`Failed to download branch ${branch}:`, branchError)
+            continue
+          }
+        }
+        
+        if (!downloaded) {
+          throw new Error(`Failed to download repository. Tried branches: ${branchesToTry.join(', ')}`)
+        }
         
         // Move contents from subdirectory to tempDir root
         const currentTempDir = tempDir
