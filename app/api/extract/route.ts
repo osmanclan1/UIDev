@@ -72,8 +72,10 @@ export async function POST(request: NextRequest) {
         }
 
         // Try downloading zip with correct format (simpler URL)
-        const branchesToTry = [defaultBranch, 'main', 'master']
+        // Remove duplicates from branch list
+        const branchesToTry = Array.from(new Set([defaultBranch, 'main', 'master']))
         let downloaded = false
+        const errors: string[] = []
         
         for (const branch of branchesToTry) {
           try {
@@ -83,26 +85,66 @@ export async function POST(request: NextRequest) {
             const response = await fetch(zipUrl, {
               redirect: 'follow', // Explicitly follow redirects
               headers: {
-                'Accept': 'application/zip',
+                'Accept': 'application/zip, application/octet-stream, */*',
+                'User-Agent': 'Mozilla/5.0 (compatible; DesignExtractor/1.0)',
                 ...(process.env.GITHUB_TOKEN && { 'Authorization': `token ${process.env.GITHUB_TOKEN}` })
               }
             })
             
-            if (response.ok && response.headers.get('content-type')?.includes('zip')) {
-              const arrayBuffer = await response.arrayBuffer()
-              const zip = new AdmZip(Buffer.from(arrayBuffer))
-              zip.extractAllTo(tempDir, true)
-              downloaded = true
-              break
+            const contentType = response.headers.get('content-type') || ''
+            const status = response.status
+            const statusText = response.statusText
+            
+            console.log(`Attempting branch ${branch}: Status ${status} ${statusText}, Content-Type: ${contentType}`)
+            
+            if (!response.ok) {
+              const errorText = await response.text().catch(() => 'Could not read error response')
+              errors.push(`Branch ${branch}: ${status} ${statusText} - ${errorText.substring(0, 200)}`)
+              continue
             }
-          } catch (branchError) {
+            
+            // Check if it's a zip file (GitHub might return application/zip or application/octet-stream)
+            const isZip = contentType.includes('zip') || 
+                         contentType.includes('octet-stream') ||
+                         contentType.includes('application/x-zip')
+            
+            if (!isZip) {
+              // Try to read first bytes to check if it's actually a zip
+              const arrayBuffer = await response.arrayBuffer()
+              const firstBytes = new Uint8Array(arrayBuffer.slice(0, 4))
+              const isZipFile = firstBytes[0] === 0x50 && firstBytes[1] === 0x4B // PK (ZIP file signature)
+              
+              if (!isZipFile) {
+                const preview = Buffer.from(arrayBuffer.slice(0, 500)).toString('utf-8')
+                errors.push(`Branch ${branch}: Response is not a zip file. Content-Type: ${contentType}, Preview: ${preview.substring(0, 200)}`)
+                continue
+              }
+            }
+            
+            // Download and extract
+            const arrayBuffer = await response.arrayBuffer()
+            
+            if (arrayBuffer.byteLength === 0) {
+              errors.push(`Branch ${branch}: Downloaded file is empty`)
+              continue
+            }
+            
+            const zip = new AdmZip(Buffer.from(arrayBuffer))
+            zip.extractAllTo(tempDir, true)
+            downloaded = true
+            console.log(`Successfully downloaded and extracted branch ${branch}`)
+            break
+          } catch (branchError: any) {
+            const errorMsg = branchError.message || String(branchError)
+            errors.push(`Branch ${branch}: ${errorMsg}`)
             console.warn(`Failed to download branch ${branch}:`, branchError)
             continue
           }
         }
         
         if (!downloaded) {
-          throw new Error(`Failed to download repository. Tried branches: ${branchesToTry.join(', ')}`)
+          const errorDetails = errors.join('; ')
+          throw new Error(`Failed to download repository. Tried branches: ${branchesToTry.join(', ')}. Details: ${errorDetails}`)
         }
         
         // Move contents from subdirectory to tempDir root
