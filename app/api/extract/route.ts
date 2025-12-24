@@ -13,27 +13,33 @@ export async function POST(request: NextRequest) {
   let tempDir: string | null = null
 
   try {
-    const { repoUrl } = await request.json()
-
-    if (!repoUrl || typeof repoUrl !== 'string') {
-      return NextResponse.json(
-        { error: 'Repository URL is required' },
-        { status: 400 }
-      )
-    }
-
-    // Validate GitHub URL and extract owner/repo
-    const githubRegex = /^https:\/\/github\.com\/([\w\-\.]+)\/([\w\-\.]+)(?:\.git)?$/
-    const match = repoUrl.match(githubRegex)
+    const contentType = request.headers.get('content-type') || ''
     
-    if (!match) {
-      return NextResponse.json(
-        { error: 'Invalid GitHub repository URL. Format: https://github.com/owner/repo' },
-        { status: 400 }
-      )
+    // Check if it's a file upload (multipart/form-data) or JSON
+    let repoUrl: string | null = null
+    let uploadedFile: File | null = null
+    
+    if (contentType.includes('multipart/form-data')) {
+      const formData = await request.formData()
+      uploadedFile = formData.get('file') as File | null
+      
+      if (!uploadedFile) {
+        return NextResponse.json(
+          { error: 'No file uploaded' },
+          { status: 400 }
+        )
+      }
+    } else {
+      const body = await request.json()
+      repoUrl = body.repoUrl
+      
+      if (!repoUrl || typeof repoUrl !== 'string') {
+        return NextResponse.json(
+          { error: 'Repository URL is required' },
+          { status: 400 }
+        )
+      }
     }
-
-    const [, owner, repo] = match
 
     // Create temporary directory
     tempDir = path.join(os.tmpdir(), `design-extract-${Date.now()}-${Math.random().toString(36).substring(7)}`)
@@ -44,13 +50,59 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      // Try git clone first (will fail on Vercel, but that's okay)
-      try {
-        await execAsync(`git clone --depth 1 ${repoUrl} ${tempDir}`, {
-          timeout: 60000,
-          maxBuffer: 10 * 1024 * 1024
+      // Handle file upload
+      if (uploadedFile) {
+        // Save uploaded file to temp directory
+        const fileBuffer = Buffer.from(await uploadedFile.arrayBuffer())
+        const zipPath = path.join(tempDir, 'uploaded.zip')
+        fs.writeFileSync(zipPath, fileBuffer)
+        
+        // Extract the zip file
+        const zip = new AdmZip(zipPath)
+        zip.extractAllTo(tempDir, true)
+        
+        // Remove the zip file
+        fs.unlinkSync(zipPath)
+        
+        // Move contents from subdirectory to tempDir root (GitHub zips have a subdirectory)
+        const extractedDirs = fs.readdirSync(tempDir).filter(item => {
+          const fullPath = path.join(tempDir, item)
+          return fs.statSync(fullPath).isDirectory()
         })
-      } catch (gitError: any) {
+        
+        if (extractedDirs.length === 1) {
+          const extractedPath = path.join(tempDir, extractedDirs[0])
+          const files = fs.readdirSync(extractedPath)
+          files.forEach(file => {
+            fs.renameSync(
+              path.join(extractedPath, file),
+              path.join(tempDir, file)
+            )
+          })
+          fs.rmSync(extractedPath, { recursive: true, force: true })
+        }
+      } else if (repoUrl) {
+        // Handle GitHub URL
+        // Validate GitHub URL and extract owner/repo
+        const githubRegex = /^https:\/\/github\.com\/([\w\-\.]+)\/([\w\-\.]+)(?:\.git)?$/
+        const match = repoUrl.match(githubRegex)
+        
+        if (!match) {
+          return NextResponse.json(
+            { error: 'Invalid GitHub repository URL. Format: https://github.com/owner/repo' },
+            { status: 400 }
+          )
+        }
+
+        const [, owner, repo] = match
+
+        // Try git clone first (will fail on Vercel, but that's okay)
+        try {
+          await execAsync(`git clone --depth 1 ${repoUrl} ${tempDir}`, {
+            timeout: 60000,
+            maxBuffer: 10 * 1024 * 1024
+          })
+        } catch (gitError: any) {
         // Fallback: Get default branch from GitHub API, then download zip
         let defaultBranch = 'main'
         
