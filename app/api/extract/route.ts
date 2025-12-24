@@ -49,34 +49,37 @@ export async function POST(request: NextRequest) {
       throw new Error('Failed to create temporary directory')
     }
 
+    // TypeScript: tempDir is guaranteed to be string at this point
+    const workingDir: string = tempDir
+
     try {
       // Handle file upload
       if (uploadedFile) {
         // Save uploaded file to temp directory
         const fileBuffer = Buffer.from(await uploadedFile.arrayBuffer())
-        const zipPath = path.join(tempDir, 'uploaded.zip')
+        const zipPath = path.join(workingDir, 'uploaded.zip')
         fs.writeFileSync(zipPath, fileBuffer)
         
         // Extract the zip file
         const zip = new AdmZip(zipPath)
-        zip.extractAllTo(tempDir, true)
+        zip.extractAllTo(workingDir, true)
         
         // Remove the zip file
         fs.unlinkSync(zipPath)
         
         // Move contents from subdirectory to tempDir root (GitHub zips have a subdirectory)
-        const extractedDirs = fs.readdirSync(tempDir).filter(item => {
-          const fullPath = path.join(tempDir, item)
+        const extractedDirs = fs.readdirSync(workingDir).filter(item => {
+          const fullPath = path.join(workingDir, item)
           return fs.statSync(fullPath).isDirectory()
         })
         
         if (extractedDirs.length === 1) {
-          const extractedPath = path.join(tempDir, extractedDirs[0])
+          const extractedPath = path.join(workingDir, extractedDirs[0])
           const files = fs.readdirSync(extractedPath)
           files.forEach(file => {
             fs.renameSync(
               path.join(extractedPath, file),
-              path.join(tempDir, file)
+              path.join(workingDir, file)
             )
           })
           fs.rmSync(extractedPath, { recursive: true, force: true })
@@ -98,7 +101,7 @@ export async function POST(request: NextRequest) {
 
         // Try git clone first (will fail on Vercel, but that's okay)
         try {
-          await execAsync(`git clone --depth 1 ${repoUrl} ${tempDir}`, {
+          await execAsync(`git clone --depth 1 ${repoUrl} ${workingDir}`, {
             timeout: 60000,
             maxBuffer: 10 * 1024 * 1024
           })
@@ -182,7 +185,7 @@ export async function POST(request: NextRequest) {
                 
                 // Extract the zip
                 const zip = new AdmZip(Buffer.from(arrayBuffer))
-                zip.extractAllTo(tempDir, true)
+                zip.extractAllTo(workingDir, true)
                 downloaded = true
                 branchDownloaded = true
                 console.log(`Successfully downloaded and extracted branch ${branch} using ${zipUrl}`)
@@ -206,21 +209,18 @@ export async function POST(request: NextRequest) {
           }
           
           // Move contents from subdirectory to tempDir root
-          const currentTempDir = tempDir
-          if (!currentTempDir) throw new Error('Temp directory not created')
-          
-          const extractedDir = fs.readdirSync(currentTempDir).find(item => {
-            const fullPath = path.join(currentTempDir, item)
+          const extractedDir = fs.readdirSync(workingDir).find(item => {
+            const fullPath = path.join(workingDir, item)
             return fs.statSync(fullPath).isDirectory() && item.includes(repo)
           })
           
           if (extractedDir) {
-            const extractedPath = path.join(currentTempDir, extractedDir)
+            const extractedPath = path.join(workingDir, extractedDir)
             const files = fs.readdirSync(extractedPath)
             files.forEach(file => {
               fs.renameSync(
                 path.join(extractedPath, file),
-                path.join(currentTempDir, file)
+                path.join(workingDir, file)
               )
             })
             fs.rmSync(extractedPath, { recursive: true, force: true })
@@ -229,14 +229,14 @@ export async function POST(request: NextRequest) {
       } // Close else if block
 
       // Extract design system
-      const designMemory = await extractDesignSystem(tempDir)
+      const designMemory = await extractDesignSystem(workingDir)
 
       // Generate design memory file content
       const fileContent = generateDesignMemoryFileContent(designMemory)
 
       // Clean up temp directory
-      if (tempDir && fs.existsSync(tempDir)) {
-        fs.rmSync(tempDir, { recursive: true, force: true })
+      if (fs.existsSync(workingDir)) {
+        fs.rmSync(workingDir, { recursive: true, force: true })
       }
 
       return NextResponse.json({
