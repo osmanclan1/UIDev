@@ -1,18 +1,122 @@
 @import "tailwindcss";
 
-:root {
-  --background: 0 0% 100%;
-  --foreground: 222.2 84% 4.9%;
+html {
+  color-scheme: dark;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-  }
+:root {
+  --background: 24 0% 95%;
+  --foreground: 24 0% 0%;
+  --card: 24 0% 90%;
+  --card-foreground: 24 0% 10%;
+  --popover: 24 0% 95%;
+  --popover-foreground: 24 95% 0%;
+  --primary: 24 24% 80%;
+  --primary-foreground: 0 0% 0%;
+  --secondary: 24 10% 70%;
+  --secondary-foreground: 0 0% 0%;
+  --muted: -14 10% 85%;
+  --muted-foreground: 24 0% 35%;
+  --accent: -14 10% 80%;
+  --accent-foreground: 24 0% 10%;
+  --destructive: 0 50% 30%;
+  --destructive-foreground: 24 0% 90%;
+  --border: 24 20% 50%;
+  --input: 24 20% 18%;
+  --ring: 24 24% 80%;
+  --radius: 0.75rem;
+  --chatvid: 314 12% 85%;
+  --chatvid-hover: 314 12% 80%;
+}
+
+.dark {
+  --background: 16 4.5% 8.1%;
+  --foreground: 240 5% 92%;
+  --card: 16 4.5% 10.1%;
+  --card-foreground: 22 5% 90%;
+  --popover: 240 5% 8%;
+  --popover-foreground: 240 5% 88%;
+  --primary: 24 24% 80%;
+  --primary-foreground: 0 0% 0%;
+  --secondary: 24 10% 70%;
+  --secondary-foreground: 0 0% 0%;
+  --muted: 240 5% 10%;
+  --muted-foreground: 240 5% 70%;
+  --accent: -14 10% 80%;
+  --accent-foreground: 24 0% 10%;
+  --destructive: 0 75% 40%;
+  --destructive-foreground: 240 5% 95%;
+  --border: 240 5% 12%;
+  --input: 240 5% 6%;
+  --ring: 220 80% 40%;
+  --radius: 0.75rem;
+  --chatvid: 314 12% 85%;
+  --chatvid-hover: 314 12% 80%;
+}
+
+@theme {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
 }
 
 body {
-  background: hsl(var(--background));
+  width: 100%;
+  overflow-x: none;
+  background-color: hsl(var(--background));
   color: hsl(var(--foreground));
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--chatvid));
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--background));
+}
+
+@keyframes gradient-hero {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.animate-gradient-hero {
+  background-size: 150% 150%;
+  animation: gradient-hero 15s ease infinite;
 }

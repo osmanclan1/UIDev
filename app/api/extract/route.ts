@@ -9,8 +9,25 @@ import AdmZip from 'adm-zip'
 
 const execAsync = promisify(exec)
 
+interface ProcessStep {
+  step: string
+  status: 'pending' | 'in_progress' | 'completed' | 'failed'
+  message: string
+  timestamp: number
+}
+
 export async function POST(request: NextRequest) {
   let tempDir: string | null = null
+  const processSteps: ProcessStep[] = []
+
+  const addStep = (step: string, status: ProcessStep['status'], message: string) => {
+    processSteps.push({
+      step,
+      status,
+      message,
+      timestamp: Date.now()
+    })
+  }
 
   try {
     const contentType = request.headers.get('content-type') || ''
@@ -20,34 +37,42 @@ export async function POST(request: NextRequest) {
     let uploadedFile: File | null = null
     
     if (contentType.includes('multipart/form-data')) {
+      addStep('file_upload', 'in_progress', 'Receiving uploaded file...')
       const formData = await request.formData()
       uploadedFile = formData.get('file') as File | null
       
       if (!uploadedFile) {
+        addStep('file_upload', 'failed', 'No file uploaded')
         return NextResponse.json(
-          { error: 'No file uploaded' },
+          { error: 'No file uploaded', processSteps },
           { status: 400 }
         )
       }
+      addStep('file_upload', 'completed', `File received: ${uploadedFile.name} (${(uploadedFile.size / 1024 / 1024).toFixed(2)} MB)`)
     } else {
       const body = await request.json()
       repoUrl = body.repoUrl
       
       if (!repoUrl || typeof repoUrl !== 'string') {
+        addStep('url_validation', 'failed', 'Repository URL is required')
         return NextResponse.json(
-          { error: 'Repository URL is required' },
+          { error: 'Repository URL is required', processSteps },
           { status: 400 }
         )
       }
+      addStep('url_validation', 'completed', `Repository URL validated: ${repoUrl}`)
     }
 
     // Create temporary directory
+    addStep('temp_directory', 'in_progress', 'Creating temporary directory...')
     tempDir = path.join(os.tmpdir(), `design-extract-${Date.now()}-${Math.random().toString(36).substring(7)}`)
     fs.mkdirSync(tempDir, { recursive: true })
     
     if (!tempDir) {
+      addStep('temp_directory', 'failed', 'Failed to create temporary directory')
       throw new Error('Failed to create temporary directory')
     }
+    addStep('temp_directory', 'completed', `Temporary directory created: ${tempDir}`)
 
     // TypeScript: tempDir is guaranteed to be string at this point
     const workingDir: string = tempDir
@@ -55,6 +80,7 @@ export async function POST(request: NextRequest) {
     try {
       // Handle file upload
       if (uploadedFile) {
+        addStep('extract_zip', 'in_progress', 'Extracting uploaded zip file...')
         // Save uploaded file to temp directory
         const fileBuffer = Buffer.from(await uploadedFile.arrayBuffer())
         const zipPath = path.join(workingDir, 'uploaded.zip')
@@ -66,6 +92,7 @@ export async function POST(request: NextRequest) {
         
         // Remove the zip file
         fs.unlinkSync(zipPath)
+        addStep('extract_zip', 'completed', 'Zip file extracted successfully')
         
         // Move contents from subdirectory to tempDir root (GitHub zips have a subdirectory)
         const extractedDirs = fs.readdirSync(workingDir).filter(item => {
@@ -100,13 +127,17 @@ export async function POST(request: NextRequest) {
         const [, owner, repo] = match
 
         // Try git clone first (will fail on Vercel, but that's okay)
+        addStep('git_clone', 'in_progress', `Attempting to clone repository: ${repoUrl}`)
         try {
           await execAsync(`git clone --depth 1 ${repoUrl} ${workingDir}`, {
             timeout: 60000,
             maxBuffer: 10 * 1024 * 1024
           })
+          addStep('git_clone', 'completed', 'Repository cloned successfully via git')
         } catch (gitError: any) {
+          addStep('git_clone', 'failed', 'Git clone failed, trying zip download...')
           // Fallback: Get default branch from GitHub API, then download zip
+          addStep('fetch_branch', 'in_progress', 'Fetching default branch from GitHub API...')
           let defaultBranch = 'main'
           
           try {
@@ -121,18 +152,24 @@ export async function POST(request: NextRequest) {
             if (repoInfoResponse.ok) {
               const repoInfo = await repoInfoResponse.json()
               defaultBranch = repoInfo.default_branch || 'main'
+              addStep('fetch_branch', 'completed', `Default branch detected: ${defaultBranch}`)
+            } else {
+              addStep('fetch_branch', 'failed', 'Could not fetch branch info, using "main" as fallback')
             }
           } catch (apiError) {
+            addStep('fetch_branch', 'failed', 'Could not fetch default branch, using "main" as fallback')
             console.warn('Could not fetch default branch, using "main" as fallback')
           }
 
           // Try downloading zip using GitHub API archive endpoint (more reliable)
           // Remove duplicates from branch list
+          addStep('download_repo', 'in_progress', `Attempting to download repository as zip...`)
           const branchesToTry = Array.from(new Set([defaultBranch, 'main', 'master']))
           let downloaded = false
           const errors: string[] = []
           
           for (const branch of branchesToTry) {
+            addStep('download_repo', 'in_progress', `Trying branch: ${branch}`)
             // Try multiple URL formats (prioritize direct URLs that work reliably)
             const urlFormats = [
               `https://github.com/${owner}/${repo}/archive/${branch}.zip`, // Direct URL - most reliable for public repos
@@ -184,10 +221,13 @@ export async function POST(request: NextRequest) {
                 }
                 
                 // Extract the zip
+                addStep('extract_zip', 'in_progress', `Extracting downloaded zip file from branch: ${branch}`)
                 const zip = new AdmZip(Buffer.from(arrayBuffer))
                 zip.extractAllTo(workingDir, true)
                 downloaded = true
                 branchDownloaded = true
+                addStep('download_repo', 'completed', `Successfully downloaded and extracted branch ${branch}`)
+                addStep('extract_zip', 'completed', 'Zip file extracted successfully')
                 console.log(`Successfully downloaded and extracted branch ${branch} using ${zipUrl}`)
                 break // Success! Exit URL formats loop
               } catch (urlError: any) {
@@ -229,24 +269,32 @@ export async function POST(request: NextRequest) {
       } // Close else if block
 
       // Extract design system
+      addStep('extract_design', 'in_progress', 'Analyzing codebase and extracting design system...')
       const designMemory = await extractDesignSystem(workingDir)
+      addStep('extract_design', 'completed', `Design system extracted: ${designMemory.components.length} components, ${Object.keys(designMemory.designTokens.colors.light).length} color tokens, ${Object.keys(designMemory.patterns).length} patterns`)
 
       // Generate design memory file content
+      addStep('generate_file', 'in_progress', 'Generating design memory file...')
       const fileContent = generateDesignMemoryFileContent(designMemory)
+      addStep('generate_file', 'completed', 'Design memory file generated successfully')
 
       // Clean up temp directory
+      addStep('cleanup', 'in_progress', 'Cleaning up temporary files...')
       if (fs.existsSync(workingDir)) {
         fs.rmSync(workingDir, { recursive: true, force: true })
       }
+      addStep('cleanup', 'completed', 'Cleanup completed')
 
       return NextResponse.json({
         success: true,
         designMemory: fileContent,
+        designMemoryData: designMemory, // Include the parsed object for easier access
         metadata: {
           components: designMemory.components.length,
           colorTokens: Object.keys(designMemory.designTokens.colors.light).length,
           patterns: Object.keys(designMemory.patterns).length
-        }
+        },
+        processSteps
       })
     } catch (error: any) {
       // Clean up on error
@@ -257,8 +305,9 @@ export async function POST(request: NextRequest) {
     }
   } catch (error: any) {
     console.error('Extraction error:', error)
+    addStep('error', 'failed', error.message || 'Failed to extract design system')
     return NextResponse.json(
-      { error: error.message || 'Failed to extract design system' },
+      { error: error.message || 'Failed to extract design system', processSteps },
       { status: 500 }
     )
   }
