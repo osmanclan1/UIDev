@@ -71,74 +71,80 @@ export async function POST(request: NextRequest) {
           console.warn('Could not fetch default branch, using "main" as fallback')
         }
 
-        // Try downloading zip with correct format (simpler URL)
+        // Try downloading zip using GitHub API archive endpoint (more reliable)
         // Remove duplicates from branch list
         const branchesToTry = Array.from(new Set([defaultBranch, 'main', 'master']))
         let downloaded = false
         const errors: string[] = []
         
         for (const branch of branchesToTry) {
-          try {
-            // Use simpler URL format: /archive/{branch}.zip (not /refs/heads/)
-            const zipUrl = `https://github.com/${owner}/${repo}/archive/${branch}.zip`
-            
-            const response = await fetch(zipUrl, {
-              redirect: 'follow', // Explicitly follow redirects
-              headers: {
-                'Accept': 'application/zip, application/octet-stream, */*',
-                'User-Agent': 'Mozilla/5.0 (compatible; DesignExtractor/1.0)',
-                ...(process.env.GITHUB_TOKEN && { 'Authorization': `token ${process.env.GITHUB_TOKEN}` })
+          // Try multiple URL formats (prioritize direct URLs that work reliably)
+          const urlFormats = [
+            `https://github.com/${owner}/${repo}/archive/${branch}.zip`, // Direct URL - most reliable for public repos
+            `https://api.github.com/repos/${owner}/${repo}/zipball/${branch}`, // GitHub API endpoint (returns 302 redirect)
+            `https://github.com/${owner}/${repo}/archive/refs/heads/${branch}.zip`, // Alternative direct URL format
+          ]
+          
+          let branchDownloaded = false
+          
+          for (const zipUrl of urlFormats) {
+            try {
+              const response = await fetch(zipUrl, {
+                redirect: 'follow', // Explicitly follow redirects
+                headers: {
+                  'Accept': 'application/vnd.github.v3+json, application/zip, application/octet-stream, */*',
+                  'User-Agent': 'DesignExtractor/1.0',
+                  ...(process.env.GITHUB_TOKEN && { 'Authorization': `token ${process.env.GITHUB_TOKEN}` })
+                }
+              })
+              
+              const contentType = response.headers.get('content-type') || ''
+              const status = response.status
+              const statusText = response.statusText
+              
+              console.log(`Attempting branch ${branch} with ${zipUrl}: Status ${status} ${statusText}, Content-Type: ${contentType}`)
+              
+              if (!response.ok) {
+                const errorText = await response.text().catch(() => 'Could not read error response')
+                errors.push(`Branch ${branch} (${zipUrl}): ${status} ${statusText} - ${errorText.substring(0, 200)}`)
+                continue // Try next URL format
               }
-            })
             
-            const contentType = response.headers.get('content-type') || ''
-            const status = response.status
-            const statusText = response.statusText
-            
-            console.log(`Attempting branch ${branch}: Status ${status} ${statusText}, Content-Type: ${contentType}`)
-            
-            if (!response.ok) {
-              const errorText = await response.text().catch(() => 'Could not read error response')
-              errors.push(`Branch ${branch}: ${status} ${statusText} - ${errorText.substring(0, 200)}`)
-              continue
-            }
-            
-            // Check if it's a zip file (GitHub might return application/zip or application/octet-stream)
-            const isZip = contentType.includes('zip') || 
-                         contentType.includes('octet-stream') ||
-                         contentType.includes('application/x-zip')
-            
-            if (!isZip) {
-              // Try to read first bytes to check if it's actually a zip
+              // Download the file
               const arrayBuffer = await response.arrayBuffer()
+              
+              if (arrayBuffer.byteLength === 0) {
+                errors.push(`Branch ${branch} (${zipUrl}): Downloaded file is empty`)
+                continue // Try next URL format
+              }
+              
+              // Check if it's actually a zip file by checking the signature
               const firstBytes = new Uint8Array(arrayBuffer.slice(0, 4))
               const isZipFile = firstBytes[0] === 0x50 && firstBytes[1] === 0x4B // PK (ZIP file signature)
               
               if (!isZipFile) {
                 const preview = Buffer.from(arrayBuffer.slice(0, 500)).toString('utf-8')
-                errors.push(`Branch ${branch}: Response is not a zip file. Content-Type: ${contentType}, Preview: ${preview.substring(0, 200)}`)
-                continue
+                errors.push(`Branch ${branch} (${zipUrl}): Response is not a zip file. Content-Type: ${contentType}, Preview: ${preview.substring(0, 200)}`)
+                continue // Try next URL format
               }
+              
+              // Extract the zip
+              const zip = new AdmZip(Buffer.from(arrayBuffer))
+              zip.extractAllTo(tempDir, true)
+              downloaded = true
+              branchDownloaded = true
+              console.log(`Successfully downloaded and extracted branch ${branch} using ${zipUrl}`)
+              break // Success! Exit URL formats loop
+            } catch (urlError: any) {
+              const errorMsg = urlError.message || String(urlError)
+              errors.push(`Branch ${branch} (${zipUrl}): ${errorMsg}`)
+              console.warn(`Failed to download from ${zipUrl}:`, urlError)
+              continue // Try next URL format
             }
-            
-            // Download and extract
-            const arrayBuffer = await response.arrayBuffer()
-            
-            if (arrayBuffer.byteLength === 0) {
-              errors.push(`Branch ${branch}: Downloaded file is empty`)
-              continue
-            }
-            
-            const zip = new AdmZip(Buffer.from(arrayBuffer))
-            zip.extractAllTo(tempDir, true)
-            downloaded = true
-            console.log(`Successfully downloaded and extracted branch ${branch}`)
-            break
-          } catch (branchError: any) {
-            const errorMsg = branchError.message || String(branchError)
-            errors.push(`Branch ${branch}: ${errorMsg}`)
-            console.warn(`Failed to download branch ${branch}:`, branchError)
-            continue
+          }
+          
+          if (branchDownloaded) {
+            break // Success! Exit branches loop
           }
         }
         
