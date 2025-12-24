@@ -103,7 +103,7 @@ export default function Home() {
   }
 
   return (
-    <div className="relative min-h-screen flex items-center justify-center overflow-hidden bg-gradient-to-br from-background via-background to-muted/20">
+    <div className="relative min-h-screen flex items-center justify-center overflow-hidden bg-gradient-to-br from-background via-background to-muted/20 pb-8">
       <ModeToggle />
       {/* Animated background elements */}
       <div className="absolute inset-0 overflow-hidden">
@@ -131,26 +131,26 @@ export default function Home() {
         ))}
       </div>
 
-      <div className="container relative z-10 px-4 py-8 flex items-center min-h-screen">
+      <div className="container relative z-10 px-4 py-6 flex items-center justify-center min-h-screen">
         <div className="max-w-3xl mx-auto w-full">
           {/* Header */}
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, ease: "easeOut" }}
-            className="text-center mb-12"
+            className="text-center mb-6"
           >
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, delay: 0.2 }}
-              className="flex items-center justify-center gap-3 mb-6"
+              className="flex items-center justify-center gap-3 mb-4"
             >
               <div className="p-3 rounded-xl bg-primary/10">
                 <Sparkles className="w-8 h-8 text-primary" />
               </div>
             </motion.div>
-            <h1 className="text-6xl md:text-7xl font-bold tracking-tight mb-6">
+            <h1 className="text-6xl md:text-7xl font-bold tracking-tight mb-4 leading-[1.1]">
               <span className="inline-block bg-clip-text text-transparent bg-gradient-to-r from-primary via-primary/70 to-primary">
                 Design System
               </span>
@@ -163,7 +163,7 @@ export default function Home() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, delay: 0.4 }}
-              className="text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed"
+              className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed"
             >
               Extract design systems from any GitHub repository into a reusable design memory file.
               Transform your codebase into a structured design system.
@@ -358,7 +358,7 @@ export default function Home() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, delay: 0.8 }}
-              className="relative mb-8"
+              className="relative mb-6"
             >
               <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 to-primary/50 blur-2xl opacity-50" />
               <div className="relative bg-card/90 backdrop-blur-xl rounded-2xl border border-primary/10 shadow-xl p-8">
@@ -402,7 +402,7 @@ export default function Home() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.8 }}
-            className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-4"
+            className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-3"
           >
             <div className="bg-card/50 backdrop-blur-sm rounded-lg p-4 border border-border">
               <FileCode className="w-6 h-6 text-primary mb-2" />
@@ -423,7 +423,6 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-background to-transparent" />
     </div>
   )
 }
