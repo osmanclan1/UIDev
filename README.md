@@ -1,36 +1,71 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Design System Extractor Web
 
-## Getting Started
+A web application that extracts design systems from GitHub repositories and generates reusable design memory files.
 
-First, run the development server:
+## Features
+
+- 🔍 Extract design systems from any GitHub repository
+- 🎨 Capture design tokens (colors, typography, spacing)
+- 🧩 Extract reusable components
+- 📐 Detect design patterns (glassmorphism, gradients, animations)
+- 📥 Download design memory files for reuse
+
+## How It Works
+
+1. Enter a GitHub repository URL
+2. The app clones/downloads the repository
+3. Extracts design tokens, components, and patterns
+4. Generates a `design-memory.ts` file
+5. Download the file for use in other projects
+
+## Local Development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Deployment to Vercel
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Push your code to GitHub
+2. Go to [vercel.com](https://vercel.com)
+3. Import your repository
+4. Vercel will automatically detect Next.js and deploy
 
-## Learn More
+The app is configured with:
+- 60 second timeout for API routes (handles large repositories)
+- Automatic git clone or zip download fallback
 
-To learn more about Next.js, take a look at the following resources:
+## API Endpoint
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### POST `/api/extract`
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Extracts design system from a GitHub repository.
 
-## Deploy on Vercel
+**Request:**
+```json
+{
+  "repoUrl": "https://github.com/owner/repo.git"
+}
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+**Response:**
+```json
+{
+  "success": true,
+  "designMemory": "// Design Memory File...",
+  "metadata": {
+    "components": 20,
+    "colorTokens": 28,
+    "patterns": 4
+  }
+}
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Notes
+
+- The extraction process may take 30-60 seconds for large repositories
+- Private repositories require authentication (not currently supported)
+- The app uses temporary directories that are cleaned up after extraction
